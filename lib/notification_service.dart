@@ -37,8 +37,7 @@ class NotificationService {
       // Загрузка списка уже показанных уведомлений
       _loadShownNotifications();
 
-      const androidSettings =
-          AndroidInitializationSettings('@mipmap/ic_launcher');
+      const androidSettings = AndroidInitializationSettings('ic_notification');
       const settings = InitializationSettings(android: androidSettings);
 
       const channel = AndroidNotificationChannel(
@@ -217,11 +216,9 @@ class NotificationService {
   static Future<void> _showNotification(String body, int id) async {
     print('Preparing to show notification...');
     
-    // Извлекаем заголовок из текста уведомления
     String title = 'Новое сообщение';
     String notificationBody = body;
     
-    // Если текст содержит двоеточие, используем первую часть как заголовок
     if (body.contains(':')) {
       final parts = body.split(':');
       if (parts.length >= 2) {
@@ -244,6 +241,7 @@ class NotificationService {
       onlyAlertOnce: true,
       autoCancel: true,
       playSound: true,
+      icon: 'ic_notification',
       ticker: 'Новое уведомление',
       category: AndroidNotificationCategory.message,
     );
