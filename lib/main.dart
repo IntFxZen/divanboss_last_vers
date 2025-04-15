@@ -106,13 +106,13 @@ class _MainPageState extends State<MainPage> {
         child: Stack(
           children: [
             WebViewWidget(controller: controller),
-            if (isLoading)
-              const Center(
-                child: CupertinoActivityIndicator(
-                  color: Colors.black87,
-                  radius: 16,
-                ),
-              ),
+            // if (isLoading)
+            //   const Center(
+            //     child: CupertinoActivityIndicator(
+            //       color: Colors.black87,
+            //       radius: 16,
+            //     ),
+            //   ),
           ],
         ),
       ),

@@ -6,9 +6,11 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 
+
+
 class NotificationService {
   static final _notifications = FlutterLocalNotificationsPlugin();
-  static const _serverUrl = 'http://192.168.0.14:3000';
+  static const _serverUrl = 'http://109.73.192.169';
   static Timer? _timer;
   static int? _lastMessageId;
   static const _pollingInterval = Duration(seconds: 2);
@@ -17,20 +19,20 @@ class NotificationService {
   static const _channelName = 'High Importance Notifications';
   static SharedPreferences? _prefs;
   static const _notificationPermissionKey = 'notification_permission_requested';
-  static bool _isInitialized = false;
-  static const _shownNotificationsKey = 'shown_notifications';
-  static Set<int> _shownNotificationIds = {};
+    static bool _isInitialized = false;
+    static const _shownNotificationsKey = 'shown_notifications';
+    static Set<int> _shownNotificationIds = {};
 
-  static Future<void> initialize() async {
-    if (_isInitialized) {
-      print('Notification service already initialized');
-      return;
-    }
-    
-    print('Initializing notification service...');
-    try {
-      // Инициализация SharedPreferences
-      _prefs = await SharedPreferences.getInstance();
+    static Future<void> initialize() async {
+      if (_isInitialized) {
+        print('Notification service already initialized');
+        return;
+      }
+      
+      print('Initializing notification service...');
+      try {
+        // Инициализация SharedPreferences
+        _prefs = await SharedPreferences.getInstance();
       _lastMessageId = _prefs?.getInt('lastMessageId');
       print('Last message ID from preferences: $_lastMessageId');
       
@@ -79,11 +81,11 @@ class NotificationService {
           print('Notification permission granted: $granted');
           await _prefs?.setBool(_notificationPermissionKey, true);
           
-          // Тестовое уведомление для проверки разрешений
-          if (granted) {
-            await _showNotification('Проверка уведомлений', 0);
-            print('Test notification sent');
-          }
+          // Убираем тестовое уведомление
+          // if (granted) {
+          //   await _showNotification('Проверка уведомлений', 0);
+          //   print('Test notification sent');
+          // }
         }
       } else {
         print('Android implementation not available');
@@ -164,11 +166,32 @@ class NotificationService {
     _checkNewMessages();
   }
 
-  static Future<void> stopPolling() {
+  static Future<void> stopPolling() async {
     print('Stopping polling...');
     _timer?.cancel();
     _timer = null;
-    return Workmanager().cancelAll();
+    
+    // Сохраняем текущее состояние перед переходом в фон
+    await _saveShownNotifications();
+    if (_lastMessageId != null) {
+      await _prefs?.setInt('lastMessageId', _lastMessageId!);
+    }
+    
+    // Регистрируем фоновую задачу
+    await Workmanager().registerPeriodicTask(
+      "notificationTask",
+      "notificationTask",
+      frequency: _backgroundInterval,
+      initialDelay: Duration.zero,
+      constraints: Constraints(
+        networkType: NetworkType.connected,
+        requiresBatteryNotLow: false,
+        requiresCharging: false,
+        requiresDeviceIdle: false,
+        requiresStorageNotLow: false,
+      ),
+      existingWorkPolicy: ExistingWorkPolicy.keep,
+    );
   }
 
   static Future<void> _checkNewMessages() async {
@@ -183,24 +206,35 @@ class NotificationService {
         final message = json.decode(response.body);
         print('Received message: $message');
 
-        if (message != null && message['id'] != _lastMessageId) {
-          print('New message found, showing notification...');
-          _lastMessageId = message['id'];
+        final messageId = message['id'] as int;
+        
+        // Проверяем перезапуск сервера (если новый ID меньше предыдущего)
+        if (_lastMessageId != null && messageId < _lastMessageId!) {
+          print('Server restart detected (new ID < last ID). Clearing shown notifications...');
+          _shownNotificationIds.clear();
+          await _saveShownNotifications();
+          _lastMessageId = null;
+          await _prefs?.remove('lastMessageId');
+        }
+
+        // Проверяем новое сообщение
+        if (_lastMessageId == null || messageId != _lastMessageId) {
+          print('New message detected. Last ID: $_lastMessageId, New ID: $messageId');
+          _lastMessageId = messageId;
           await _prefs?.setInt('lastMessageId', _lastMessageId!);
           
           // Проверяем, не было ли это уведомление уже показано
-          final messageId = message['id'];
           if (!_shownNotificationIds.contains(messageId)) {
+            print('Message ID $messageId not shown before, showing notification...');
             await _showNotification(message['text'], messageId);
             _shownNotificationIds.add(messageId);
-            _saveShownNotifications();
+            await _saveShownNotifications();
             _cleanupOldNotifications();
           } else {
-            print('Notification already shown, skipping ID: $messageId');
+            print('Message ID $messageId already shown, skipping...');
           }
         } else {
-          print('No new messages or message is null');
-          print('Current lastMessageId: $_lastMessageId, received id: ${message?['id']}');
+          print('Message ID $messageId already processed');
         }
       } else if (response.statusCode == 404) {
         print('No messages available on server yet');
@@ -269,6 +303,17 @@ void callbackDispatcher() {
   Workmanager().executeTask((_, __) async {
     print('Workmanager task executing');
     try {
+      // Инициализируем SharedPreferences для фоновой задачи
+      final prefs = await SharedPreferences.getInstance();
+      NotificationService._prefs = prefs;
+      
+      // Загружаем список показанных уведомлений
+      NotificationService._loadShownNotifications();
+      
+      // Загружаем последний ID сообщения
+      NotificationService._lastMessageId = prefs.getInt('lastMessageId');
+      print('Loaded last message ID in background: ${NotificationService._lastMessageId}');
+      
       await NotificationService._checkNewMessages();
       return true;
     } catch (e) {
