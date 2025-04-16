@@ -45,10 +45,15 @@ android {
         }
     }
 
+    aaptOptions {
+        cruncherEnabled false
+    }
+
     buildTypes {
         release {
             signingConfig signingConfigs.release
             minifyEnabled true
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
